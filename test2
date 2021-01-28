@@ -1,0 +1,570 @@
+MODULE PPAEXECUTING(SYSMODULE)
+    !***********************************************************
+    !
+    ! Module: PPAEXECUTING
+    !
+    ! Description
+    !   This program module executes all movements when the
+    !   process is running.
+    !   Edit this module to customize the project.
+    !
+    !***********************************************************
+
+    VAR num PickIndex{MaxNoSources};
+    VAR num PlaceIndex{MaxNoSources};
+    VAR num OtherIndex{MaxNoSources};
+
+    ! Definition of the item targets, are temporarely used in the pick and place routines.
+    VAR itmtgt PickTarget;
+    VAR itmtgt PlaceTarget;
+    TASK PERS wobjdata WObjPick:=[FALSE,FALSE,"CNV1",[[0,0,0],[1,0,0,0]],[[0,0,0],[1,0,0,0]]];
+    TASK PERS wobjdata WObjPlace:=[FALSE,TRUE,"",[[0,-255,-1400],[0,0,0,1]],[[0,0,0],[1,0,0,0]]];
+
+    ! Safe/stop position. Given as joint angles.
+    TASK PERS jointtarget SafePosJoints:=[[-11,-11,-11,0,0,0],[0,0,0,0,0,0]];
+    ! Cartesian safe/stop position. Calculated from SafePosJoints and Gripper.
+    TASK PERS robtarget SafePos:=[[0,0,-1190],[0,0,1,0],[0,0,0,0],[0,0,0,0,0,0]];
+    TASK PERS robtarget TrashPos:=[[0,390,-1190],[0,0,1,0],[0,0,0,0],[0,0,0,0,0,0]];
+    TASK PERS robtarget HandChangePos{2}:=[[[243.85,441.76,-963.00],[0,0.711063,-0.703128,0],[0,0,0,0],[0,0,0,0,0,0]],
+                                           [[-224.66,427.40,-961.02],[0,0.708834,0.705376,0],[0,0,0,0],[0,0,0,0,0,0]]];
+
+    ! Set the payload for the items which is picked.
+    TASK PERS loaddata ItemLoad1:=[0.05,[0,0,0.015],[1,0,0,0],0,0,0];
+    TASK PERS loaddata ItemLoad2:=[0.1,[0,0,0.015],[1,0,0,0],0,0,0];
+
+    !For Same Height when place
+    VAR num nPlHeight;
+    VAR bool b_FirstPlace:=TRUE;
+
+    !To Place each Daiza adress
+    VAR num n_PickID;
+    VAR num n_Count_15{15}:=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+    VAR num n_Count_12{12}:=[1,2,3,4,6,7,8,9,11,12,13,14];
+
+    !For avoid arm check limit 
+    VAR num n_Usetime;
+
+    !For pick miss
+    VAR bool b_RePickPlaceSeq:=FALSE;
+
+    !For the item is not exist at PickWorkArea.
+    VAR num n_WaitTimeWhenPick:=5;
+
+    !For Y sort
+    VAR sortdata y_sort:=[POS_Y_SORT_TYPE,50,50];
+
+    !For clean hand
+    PERS num n_Y:=-40;
+    PERS robtarget r_CleanPos{2}:=[[[-278.98,437.31,-920.46],[0,0.999757,-0.0220404,0],[0,0,0,0],[0,0,0,0,0,0]],
+                                   [[279.89,432.03,-920.94],[0,0.999972,-0.00752026,0],[0,0,0,0],[0,0,0,0,0,0]]];
+    ! Y sort
+    PERS selectiondata Ysort{2}:=[[1,5,[60,310,30,0],[0,[[0,300,0],[0,0,0,1]]]],
+                                  [1,5,[60,310,30,0],[0,[[0,-300,0],[1,0,0,0]]]]];
+
+    !***********************************************************
+    !
+    ! Procedure SetupIndexes
+    !
+    !   Sets up the correct indexes for the different.
+    !   The index is the same as the one that is set in the 
+    !   PickMaster workarea.
+    !   The default setup is only made to catch all workareas.
+    !   Customize this for each project to get the correct
+    !   indexes.
+    !
+    !***********************************************************
+    PROC SetupIndexes()
+        VAR num PickNumber:=1;
+        VAR num PlaceNumber:=1;
+        VAR num OtherNumber:=1;
+
+        FOR i FROM 1 TO MaxNoSources DO
+            IF (ItmSrcData{i}.Used) THEN
+                IF (ItmSrcData{i}.SourceType=PICK_TYPE) THEN
+                    PickIndex{PickNumber}:=i;
+                    Incr PickNumber;
+                ELSEIF (ItmSrcData{i}.SourceType=PLACE_TYPE) THEN
+                    PlaceIndex{PlaceNumber}:=i;
+                    Incr PlaceNumber;
+                ELSE
+                    OtherIndex{OtherNumber}:=i;
+                    Incr OtherNumber;
+                ENDIF
+            ENDIF
+        ENDFOR
+    ENDPROC
+
+    !***********************************************************
+    !
+    ! Procedure PickPlaceSeq
+    !
+    !   The Pick and Place sequence. 
+    !   Edit this routine to specify how the robot shall 
+    !   execute the movements.
+    !
+    !***********************************************************
+    PROC PickPlaceSeq()
+        VAR bool b_TimeFlag:=FALSE;
+        VAR bool b_TimeFlag2:=FALSE;
+        VAR bool b_CanPlace:=FALSE;
+
+        !First Pick
+        IF ProductData{n_ProjectNumber}.Number_of_Placed=15 THEN
+            !Output the compleate signal when number of pick was
+            IF n_PickID=5 OR n_PickID=10 OR n_PickID=15 SetDO DO_Placed{n_Count_15{n_PickID}},1;
+            IF n_PickID=0 THEN
+                !First pick
+                Pick1 PickIndex{1},n_PickID;
+            ELSE
+                !Common pick
+                Pick1 PickIndex{1},n_Count_15{n_PickID};
+            ENDIF
+        ELSEIF ProductData{n_ProjectNumber}.Number_of_Placed=12 THEN
+            IF n_PickID=4 OR n_PickID=8 OR n_PickID=12 SetDO DO_Placed{n_Count_12{n_PickID}},1;
+            IF n_PickID=0 THEN
+                Pick1 PickIndex{1},n_PickID;
+            ELSE
+                Pick1 PickIndex{1},n_Count_12{n_PickID};
+            ENDIF
+        ELSEIF ProductData{n_ProjectNumber}.Number_of_Placed<>12 OR ProductData{n_ProjectNumber}.Number_of_Placed<>15 THEN
+            ErrWrite "Wrong Project number select!","";
+            Stop;
+        ENDIF
+
+        !Reset n_PickID to output signal of PickPlace compleated
+        IF n_PickID=ProductData{n_ProjectNumber}.Number_of_Placed n_PickID:=0;
+
+        Incr n_PickID;
+
+        !Second Pick
+        Pick2 PickIndex{1};
+
+        !For when the robot is waitting for 1st item long time  
+        IF b_RePickPlaceSeq=TRUE THEN
+            b_RePickPlaceSeq:=FALSE;
+            Decr n_PickID;
+            RETURN ;
+        ENDIF
+
+        !The robot wait for PLC order of each product ID signal
+        IF ProductData{n_ProjectNumber}.Number_of_Placed=15 THEN
+            WaitDI DI_PlaceOrder{n_Count_15{n_PickID}},1\MaxTime:=30\TimeFlag:=b_TimeFlag2;
+        ELSEIF ProductData{n_ProjectNumber}.Number_of_Placed=12 THEN
+            WaitDI DI_PlaceOrder{n_Count_12{n_PickID}},1\MaxTime:=30\TimeFlag:=b_TimeFlag2;
+        ENDIF
+
+        !For when the robot is waitting for 2nd item long time  
+        IF b_TimeFlag2=TRUE THEN
+            b_TimeFlag2:=FALSE;
+            MoveToTrashPos;
+            Decr n_PickID;
+            RETURN ;
+        ENDIF
+
+        ! Disable Wait for PLC order
+        ! WaitUntil CCDI045=1\MaxTime:=1\TimeFlag:=b_TimeFlag\PollRate:=0.01;
+        !
+        ! IF b_TimeFlag=TRUE THEN
+        !   ErrWrite "Miss Pick!","";
+        !   b_TimeFlag:=FALSE;
+        !   Decr n_PickID;
+        !   MoveToTrashPos;
+        ! ELSE
+        !   b_CanPlace:=TRUE;
+        ! ENDIF
+
+        MotionSup\On\TuneValue:=60;
+
+        IF ProductData{n_ProjectNumber}.Number_of_Placed=15 THEN
+            TEST n_PickID
+            CASE 1,2,3,4,5:
+                Place PlaceIndex{1};
+            CASE 6,7,8,9,10:
+                Place PlaceIndex{2};
+            CASE 11,12,13,14,15:
+                Place PlaceIndex{3};
+            ENDTEST
+        ELSEIF ProductData{n_ProjectNumber}.Number_of_Placed=12 THEN
+            TEST n_PickID
+            CASE 1,2,3,4:
+                Place PlaceIndex{1};
+            CASE 5,6,7,8:
+                Place PlaceIndex{2};
+            CASE 9,10,11,12:
+                Place PlaceIndex{3};
+            ENDTEST
+        ENDIF
+
+        MotionSup\On\TuneValue:=100;
+        IF CCDI048=1 MoveToCleanPos;
+
+        !For when the robot is waitting for 2nd item long time  
+        !        IF b_RePickPlaceSeq=TRUE THEN
+        !            b_RePickPlaceSeq:=FALSE;
+        !            Decr n_PickID;
+        !            RETURN;
+        !        ENDIF
+
+    ENDPROC
+
+    !***********************************************************
+    !
+    ! Procedure Pick
+    !
+    !   Executes a pick movement
+    !
+    !***********************************************************
+    PROC Pick1(num Index,num ID)
+        VAR bool b_TimeOut:=FALSE;
+        VAR bool b_FindItem:=FALSE;
+        VAR bool b_MovedMidPos:=FALSE;
+        VAR robtarget r_TempRobtarget;
+
+        IF Index>0 THEN
+            WObjPick:=ItmSrcData{Index}.Wobj;
+            !UseReachableTargets ItmSrcData{Index}.ItemSource,TRUE,1\ReleaseTime:=0.05;
+            
+            GetItmTgt ItmSrcData{Index}.ItemSource,PickTarget\Selection:=Ysort{SetValue(GetSysInfo(\SerialNo))};
+            !GetItmTgt ItmSrcData{Index}.ItemSource,PickTarget;
+            
+            ! Disable move the position to avoid collision to IRB1200 hand  
+            ! WHILE b_FindItem=FALSE DO
+            !     GetItmTgt ItmSrcData{Index}.ItemSource,PickTarget\MaxTime:=n_WaitTimeWhenPick\TimeFlag:=b_TimeOut;
+            !     IF b_TimeOut=TRUE THEN
+            !         b_TimeOut:=FALSE;
+            !         IF b_MovedMidPos=FALSE THEN
+            !             GotoMidPos;
+            !             b_MovedMidPos:=TRUE;
+            !         ENDIF
+            !     ELSE
+            !         b_FindItem:=TRUE;
+            !     ENDIF
+            ! ENDWHILE
+
+            AdjustAngleZ PickTarget;
+
+            IF ID=0 THEN
+                !Do not output signal of place completed when first Pick 
+                TriggL\Conc,RelTool(PickTarget.RobTgt,0,0,-ItmSrcData{Index}.OffsZ),MaxSpeed,ItmSrcData{Index}.VacuumAct1\T2:=t_Cylinder1_ON,z20,PickAct1\WObj:=WObjPick;
+                MoveL\Conc,PickTarget.RobTgt,MaxSpeed,z5\Inpos:=ItmSrcData{Index}.TrackPoint,PickAct1\WObj:=WObjPick;
+            ELSE
+                !Common Pick moving use signal output
+                TriggL\Conc,RelTool(PickTarget.RobTgt,0,0,-ItmSrcData{Index}.OffsZ),MaxSpeed,ItmSrcData{Index}.VacuumAct1\T2:=t_Cylinder1_ON\T3:=t_PlacedON{ID},z20,PickAct1\WObj:=WObjPick;
+                TriggL\Conc,PickTarget.RobTgt,MaxSpeed,t_PlacedOFF{ID},z5\Inpos:=ItmSrcData{Index}.TrackPoint,PickAct1\WObj:=WObjPick;
+            ENDIF
+
+            GripLoad ItemLoad1;
+            AccSet ProductData{n_ProjectNumber}.Acceleration_Value,ProductData{n_ProjectNumber}.Acceleration_Value;
+
+            IF QuickAck(Index,PickTarget) THEN
+                TriggL RelTool(PickTarget.RobTgt,0,0,-ItmSrcData{Index}.OffsZ),LowSpeed,t_Cylinder1_OFF,z20,PickAct1\WObj:=WObjPick;
+            ELSE
+                TriggL RelTool(PickTarget.RobTgt,0,0,-ItmSrcData{Index}.OffsZ),LowSpeed,ItmSrcData{Index}.Ack\T2:=t_Cylinder1_OFF,z20,PickAct1\WObj:=WObjPick;
+            ENDIF
+        ELSE
+            ErrWrite "Missing item distribution","Cannot pick because no item distribution contains current work area."\RL2:="Please check configuration";
+            SafeStop;
+        ENDIF
+    ENDPROC
+
+    PROC Pick2(num Index)
+        VAR bool b_GetItmDone:=FALSE;
+        VAR bool b_TimeOut:=FALSE;
+
+        IF Index>0 THEN
+            WObjPick:=ItmSrcData{Index}.Wobj;
+            !UseReachableTargets ItmSrcData{Index}.ItemSource,TRUE,1\ReleaseTime:=0.05;
+            !GetItmTgt ItmSrcData{Index}.ItemSource,PickTarget;
+
+            !Robot move to trash positon if the robot have an item for long time
+            WHILE b_GetItmDone=FALSE DO
+                GetItmTgt ItmSrcData{Index}.ItemSource,PickTarget\MaxTime:=30\TimeFlag:=b_TimeOut\Selection:=Ysort{SetValue(GetSysInfo(\SerialNo))};
+                !GetItmTgt ItmSrcData{Index}.ItemSource,PickTarget\MaxTime:=30\TimeFlag:=b_TimeOut;
+                IF b_TimeOut=TRUE THEN
+                    b_TimeOut:=FALSE;
+                    MoveToTrashPos;
+                    b_RePickPlaceSeq:=TRUE;
+                    b_GetItmDone:=TRUE;
+                ELSE
+                    b_GetItmDone:=TRUE;
+                ENDIF
+            ENDWHILE
+            IF b_RePickPlaceSeq=TRUE RETURN ;
+
+            AdjustAngleZ PickTarget;
+            TriggL\Conc,RelTool(PickTarget.RobTgt,0,0,-ItmSrcData{Index}.OffsZ),MaxSpeed,ItmSrcData{Index}.VacuumAct2\T2:=t_Cylinder2_ON,z20,PickAct2\WObj:=WObjPick;
+            MoveL\Conc,PickTarget.RobTgt,LowSpeed,z5\Inpos:=ItmSrcData{Index}.TrackPoint,PickAct2\WObj:=WObjPick;
+            GripLoad ItemLoad2;
+            TriggL RelTool(PickTarget.RobTgt,0,0,-ItmSrcData{Index}.OffsZ),LowSpeed,ItmSrcData{Index}.Ack\T2:=t_Cylinder1_ON,z20,PickAct2\WObj:=WObjPick;
+        ELSE
+            ErrWrite "Missing item distribution","Cannot pick because no item distribution contains current work area."\RL2:="Please check configuration";
+            SafeStop;
+        ENDIF
+    ENDPROC
+
+    !***********************************************************
+    !
+    ! Procedure Place
+    !
+    !   Executes a place movement
+    !
+    !***********************************************************
+
+    PROC Place(num Index)
+        VAR bool b_GetItmDone:=FALSE;
+        VAR bool b_TimeOut:=FALSE;
+
+        IF Index>0 THEN
+            Coordinated;
+            WObjPlace:=ItmSrcData{Index}.Wobj;
+            GetItmTgt ItmSrcData{Index}.ItemSource,PlaceTarget;
+
+            !Robot move to trash positon if the robot have an item for long time
+            !            WHILE b_GetItmDone=FALSE DO
+            !                GetItmTgt ItmSrcData{Index}.ItemSource,PlaceTarget\MaxTime:=15\TimeFlag:=b_TimeOut;
+            !                IF b_TimeOut=TRUE THEN
+            !                    b_TimeOut:=FALSE;
+            !                    MoveToTrashPos;
+            !                    b_RePickPlaceSeq:=TRUE;
+            !                    b_GetItmDone:=TRUE;
+            !                ELSE
+            !                    b_GetItmDone:=TRUE;
+            !                ENDIF
+            !            ENDWHILE
+            !            IF b_RePickPlaceSeq=TRUE RETURN;
+
+            IF b_FirstPlace=TRUE THEN
+                nPlHeight:=PlaceTarget.RobTgt.trans.z;
+                b_FirstPlace:=FALSE;
+            ENDIF
+
+            MoveL\Conc,RelTool(PlaceTarget.RobTgt,0,100,-(ItmSrcData{Index}.OffsZ-(PlaceTarget.RobTgt.trans.z-nPlHeight))),MaxSpeed,z50,Gripper\WObj:=WObjPlace;
+            MoveL\Conc,RelTool(PlaceTarget.RobTgt,0,0,-(ItmSrcData{Index}.OffsZ-(PlaceTarget.RobTgt.trans.z-nPlHeight))),MaxSpeed,z20,Gripper\WObj:=WObjPlace;
+            TriggL\Conc,PlaceTarget.RobTgt,LowSpeed,ItmSrcData{Index}.VacuumRev1\T2:=ItmSrcData{Index}.VacuumRev2,z5\Inpos:=ItmSrcData{Index}.TrackPoint,Gripper\WObj:=WObjPlace;
+            GripLoad load0;
+            AccSet 100,100;
+            TriggL\Conc,RelTool(PlaceTarget.RobTgt,0,0,-(ItmSrcData{Index}.OffsZ-(PlaceTarget.RobTgt.trans.z-nPlHeight))),MaxSpeed,t_Cylinder1_OFF\T2:=t_Cylinder2_OFF,z20,Gripper\WObj:=WObjPlace;
+            TriggL RelTool(PlaceTarget.RobTgt,0,100,-(ItmSrcData{Index}.OffsZ-(PlaceTarget.RobTgt.trans.z-nPlHeight))),MaxSpeed,ItmSrcData{Index}.Ack\T2:=t_CheckSensorOFF{1}\T3:=t_CheckSensorOFF{2},z50,Gripper\WObj:=WObjPlace;
+            UnCoordinated;
+        ELSE
+            ErrWrite "Missing item distribution","Cannot place because no item distribution contains current work area."\RL2:="Please check configuration";
+            SafeStop;
+        ENDIF
+    ENDPROC
+
+    PROC GotoMidPos()
+        VAR robtarget r_CurrentPos;
+
+        r_CurrentPos:=CRobT(\Tool:=Gripper\WObj:=wobj0);
+        IF r_CurrentPos.trans.y<0 MoveL\Conc,Offs(r_CurrentPos,0,100,0),MaxSpeed,z20,Gripper;
+    ENDPROC
+
+    PROC MoveToTrashPos()
+        GotoHeightPos;
+        MoveL Offs(TrashPos,0,-120,0),VeryLowSpeed,fine,Gripper\WObj:=wobj0;
+        MoveL TrashPos,VeryLowSpeed,fine,Gripper\WObj:=wobj0;
+        ResetSolenoid;
+        WaitTime\InPos,1;
+    ENDPROC
+
+    PROC MoveToCleanPos()
+        VAR robtarget r_CurrentTarget;
+        VAR robtarget r_CleanTarget;
+
+        WaitTime\InPos,0;
+        r_CleanTarget:=SetCleanTarget(GetSysInfo(\SerialNo));
+
+        !Max Height
+        ResetCylinder;
+        GotoHeightPos;
+
+        !1st Y
+        r_CurrentTarget:=CRobT(\Tool:=tool0\WObj:=wobj0);
+        r_CurrentTarget.rot:=r_CleanTarget.rot;
+        r_CurrentTarget.trans.y:=r_CleanTarget.trans.y+n_Y;
+        MoveL r_CurrentTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+
+        !1st X
+        r_CurrentTarget.trans.x:=r_CleanTarget.trans.x;
+        MoveL r_CurrentTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+
+        !1st Z
+        r_CurrentTarget.trans.z:=r_CleanTarget.trans.z-15;
+        MoveL r_CurrentTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+
+        !2nd Y
+        r_CurrentTarget.trans.y:=r_CleanTarget.trans.y;
+        MoveL r_CurrentTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+
+        !2nd Z
+        r_CurrentTarget:=r_CleanTarget;
+        FOR i FROM 1 TO 5 DO
+            AccSet 10,10;
+            MoveL Offs(r_CurrentTarget,0,0,10),VeryLowSpeed,fine,tool0\WObj:=wobj0;
+            SetDO CCDO032,1;
+            SetDO CCDO033,1;
+            WaitTime 1;
+            MoveL Offs(r_CurrentTarget,0,0,-10),VeryLowSpeed,z0,tool0\WObj:=wobj0;
+            ResetSolenoid;
+        ENDFOR
+        AccSet 100,100;
+
+        !3rd Z
+        r_CurrentTarget.trans.z:=r_CleanTarget.trans.z-20;
+        MoveL r_CurrentTarget,VeryLowSpeed,z5,tool0\WObj:=wobj0;
+
+        !3rd Y
+        r_CurrentTarget.trans.y:=r_CleanTarget.trans.y+n_Y*3;
+        MoveL r_CurrentTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+
+        !Max height
+        GotoHeightPos;
+        MoveL SafePos,VeryLowSpeed,fine,Gripper\WObj:=wobj0;
+        PulseDO\PLength:=0.1,CCDO048;
+    ENDPROC
+
+    PROC MoveToAvoidPos_Z()
+        VAR robtarget r_CurrentTarget;
+        VAR robtarget r_CleanTarget;
+
+        r_CleanTarget:=SetCleanTarget(GetSysInfo(\SerialNo));
+        r_CurrentTarget:=CRobT(\Tool:=tool0\WObj:=wobj0);
+        r_CurrentTarget.trans.z:=r_CleanTarget.trans.z-20;
+        MoveL r_CurrentTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+    ENDPROC
+
+    PROC MoveToAvoidPos_Y()
+        VAR robtarget r_CurrentTarget;
+        VAR robtarget r_CleanTarget;
+
+        r_CleanTarget:=SetCleanTarget(GetSysInfo(\SerialNo));
+        r_CurrentTarget:=CRobT(\Tool:=tool0\WObj:=wobj0);
+        r_CurrentTarget.trans.y:=r_CleanTarget.trans.y+n_Y*3;
+        MoveL r_CurrentTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+    ENDPROC
+
+    PROC MoveToHandChange()
+        VAR robtarget r_HandChangeTarget;
+
+        GotoHeightPos;
+        r_HandChangeTarget:=SetHandChangeTarget(GetSysInfo(\SerialNo));
+        MoveL Offs(r_HandChangeTarget,0,-120,0),VeryLowSpeed,fine,tool0\WObj:=wobj0;
+        MoveL r_HandChangeTarget,VeryLowSpeed,fine,tool0\WObj:=wobj0;
+    ENDPROC
+
+    PROC AdjustAngleZ(INOUT itmtgt ItemTarget)
+        VAR num AngleX;
+        VAR num AngleY;
+        VAR num AngleZ;
+
+        AngleX:=EulerZYX(\X,ItemTarget.RobTgt.rot);
+        AngleY:=EulerZYX(\Y,ItemTarget.RobTgt.rot);
+        AngleZ:=EulerZYX(\Z,ItemTarget.RobTgt.rot);
+        !ErrWrite"Z --> "+ValToStr(AngleZ),"";
+        IF AngleZ>90 AngleZ:=AngleZ-180;
+        IF AngleZ<-90 AngleZ:=AngleZ+180;
+        ItemTarget.RobTgt.rot:=OrientZYX(AngleZ,AngleY,AngleX);
+    ENDPROC
+
+    FUNC robtarget SetCleanTarget(string Serial)
+        VAR robtarget r_robtarget;
+
+        TEST Serial
+        CASE "360-502820":
+            r_robtarget:=r_CleanPos{1};
+        CASE "360-502819":
+            r_robtarget:=r_CleanPos{2};
+        DEFAULT:
+            ErrWrite "Wrong Serial","";
+            STOP;
+        ENDTEST
+        RETURN r_robtarget;
+    ENDFUNC
+
+    FUNC robtarget SetHandChangeTarget(string Serial)
+        VAR robtarget r_robtarget;
+
+        TEST Serial
+        CASE "360-502820":
+            r_robtarget:=HandChangePos{1};
+        CASE "360-502819":
+            r_robtarget:=HandChangePos{2};
+        DEFAULT:
+            ErrWrite "Wrong Serial","";
+            STOP;
+        ENDTEST
+        RETURN r_robtarget;
+    ENDFUNC
+
+    FUNC bool IsRobotInCleanArea_XYZ()
+        VAR bool b_In:=FALSE;
+        VAR robtarget r_CurrentTarget;
+        VAR robtarget r_CleanTarget;
+        VAR num n_CX;
+        VAR num n_CY;
+        VAR num n_CZ;
+        VAR num n_DX:=40;
+        VAR num n_DY:=40;
+        VAR num n_DZ:=20;
+
+        WaitTime\InPos,0;
+        r_CurrentTarget:=CRobT(\Tool:=tool0\WObj:=wobj0);
+        n_CX:=r_CurrentTarget.trans.x;
+        n_CY:=r_CurrentTarget.trans.y;
+        n_CZ:=r_CurrentTarget.trans.z;
+
+        r_CleanTarget:=SetCleanTarget(GetSysInfo(\SerialNo));
+
+        IF
+        (r_CleanTarget.trans.x-n_DX)<n_CX AND
+        (r_CleanTarget.trans.x+n_DX)>n_CX AND
+        (r_CleanTarget.trans.y-n_DY)<n_CY AND
+        (r_CleanTarget.trans.y+n_DY)>n_CY AND
+        (r_CleanTarget.trans.z-n_DZ)<n_CZ AND
+        (r_CleanTarget.trans.z+n_DZ)>n_CZ THEN
+
+            ErrWrite "XYZ In","";
+            b_In:=TRUE;
+        ENDIF
+
+        RETURN b_In;
+    ENDFUNC
+
+    FUNC bool IsRobotInCleanArea_Y()
+        VAR bool b_In:=FALSE;
+        VAR robtarget r_CurrentTarget;
+        VAR robtarget r_CleanTarget;
+        VAR num n_CY;
+        VAR num n_DY:=40;
+
+        WaitTime\InPos,0;
+        r_CurrentTarget:=CRobT(\Tool:=tool0\WObj:=wobj0);
+        n_CY:=r_CurrentTarget.trans.y;
+        r_CleanTarget:=SetCleanTarget(GetSysInfo(\SerialNo));
+
+        IF
+        (r_CleanTarget.trans.y-n_DY)<n_CY AND
+        (r_CleanTarget.trans.y+n_DY)>n_CY THEN
+            ErrWrite "Y In","";
+            b_In:=TRUE;
+        ELSE
+        ENDIF
+        RETURN b_In;
+    ENDFUNC
+
+    FUNC num SetValue(string Serial)
+        VAR num ID:=1;
+
+        TEST Serial
+        CASE "360-502820":
+            ID:=1;
+        CASE "360-502819":
+            ID:=2;
+        DEFAULT:
+            !ErrWrite "Wrong Serial","";
+            !STOP;
+        ENDTEST
+        RETURN ID;
+    ENDFUNC
+
+ENDMODULE
