@@ -1,1 +1,15 @@
-test
+    
+    !
+    !
+    !
+    PROC GotoHeightPos()
+        VAR num n_MaxHeight_PosZ;
+        VAR num n_Height;
+        VAR robtarget pCurrentPosition;
+
+        pCurrentPosition:=CRobT(\Tool:=tool0\WObj:=wobj0);
+        ReadCfgData "/MOC/ROBOT/ROB_1","lower_work_area_z",n_MaxHeight_PosZ;
+        n_Height:=-pCurrentPosition.trans.z-n_MaxHeight_PosZ*1000;
+        IF n_Height > 10 MoveL Offs(pCurrentPosition,0,0,n_Height),VeryLowSpeed,z5,tool0;
+        WaitTime\InPos,0;
+    ENDPROC
