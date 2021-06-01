@@ -1,7 +1,7 @@
     
-    !
-    !
-    !
+    PERS selectiondata Y_sort{2}:=[[1,5,[60,310,30,0],[0,[[0,300,0],[0,0,0,1]]]],
+                                       [1,5,[60,310,30,0],[0,[[0,-300,0],[1,0,0,0]]]]];
+
     PROC GotoHeightPos()
         VAR num n_MaxHeight_PosZ;
         VAR num n_Height;
@@ -10,6 +10,70 @@
         pCurrentPosition:=CRobT(\Tool:=tool0\WObj:=wobj0);
         ReadCfgData "/MOC/ROBOT/ROB_1","lower_work_area_z",n_MaxHeight_PosZ;
         n_Height:=-pCurrentPosition.trans.z-n_MaxHeight_PosZ*1000;
-        IF n_Height > 10 MoveL Offs(pCurrentPosition,0,0,n_Height),VeryLowSpeed,z5,tool0;
-        WaitTime\InPos,0;
+        MoveL Offs(pCurrentPosition,0,0,n_Height),VeryLowSpeed,fine,tool0;
+    ENDPROC
+
+    FUNC num MaxStroke(itmtgt EndP,PERS wobjdata cwobj,PERS tooldata ctool,num Height)
+        VAR num MaxStroke;
+        VAR num MaxUpper;
+        VAR pose pose_ref:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_new:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_bhalf:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_ahalf:=[[0,0,0],[1,0,0,0]];
+
+        pose_ref.trans:=EndP.RobTgt.trans;
+        pose_ref.rot:=EndP.RobTgt.rot;
+        pose_ahalf:=PoseMult(PoseInv(PoseMult(wobj0.uframe,wobj0.oframe)),PoseMult(cwobj.uframe,cwobj.oframe));
+        pose_bhalf:=PoseMult(pose_ref,PoseMult(PoseInv(ctool.tframe),ctool.tframe));
+        pose_new:=PoseMult(pose_ahalf,pose_bhalf);
+        ReadCfgData "/MOC/ROBOT/ROB_1","lower_work_area_z",MaxUpper;
+        MaxStroke:=pose_new.trans.z+Height+MaxUpper*1000+ctool.tframe.trans.z;
+        IF MaxStroke>0 MaxStroke:=5;
+        RETURN MaxStroke;
+    ENDFUNC
+
+    PROC rcp(
+    INOUT robtarget point,
+    PERS tooldata told,
+    PERS tooldata tnew,
+    PERS wobjdata wold,
+    PERS wobjdata wnew)
+
+        VAR pose ppnt:=[[0,0,0],[1,0,0,0]];
+        VAR pose ppntnew:=[[0,0,0],[1,0,0,0]];
+        VAR pose pb:=[[0,0,0],[1,0,0,0]];
+        VAR pose pa:=[[0,0,0],[1,0,0,0]];
+        ppnt.trans:=point.trans;
+        ppnt.rot:=point.rot;
+        pa:=PoseMult(PoseInv(PoseMult(wnew.uframe,wnew.oframe)),PoseMult(wold.uframe,wold.oframe));
+        pb:=PoseMult(ppnt,PoseMult(PoseInv(told.tframe),tnew.tframe));
+        ppntnew:=PoseMult(pa,pb);
+        point.trans:=ppntnew.trans;
+        point.rot:=ppntnew.rot;
+    ENDPROC
+
+    FUNC num SetValueBySerial(string Serial)
+        VAR num ID:=1;
+
+        TEST Serial
+        CASE "360-502820":
+            ID:=1;
+        CASE "360-502819":
+            ID:=2;
+        DEFAULT:
+            ID:=1;
+            !ErrWrite "Wrong Serial","";
+            !STOP;
+        ENDTEST
+        RETURN ID;
+    ENDFUNC
+
+    PROC StopWatch(string ONOFF)
+        IF ONOFF="ON" THEN
+            ClkReset clock1;
+            ClkStart clock1;
+        ELSE
+            ClkStop clock1;
+            ErrWrite "Cycle time --> "+ValToStr(ClkRead(clock1)),"";
+        ENDIF
     ENDPROC
