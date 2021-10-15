@@ -1,0 +1,16 @@
+    VAR clock SpyClock;
+    
+    PROC Spylog(num sec)
+        IF ClkRead(SpyClock)=0 THEN
+            !Incr reg1;
+            !ErrWrite"spy start --> "+ValToStr(reg1)+"times","";
+            ClkReset SpyClock;
+            ClkStart SpyClock;
+            SpyStart "HOME:/spy.log";
+        ELSEIF ClkRead(SpyClock)>sec THEN
+            !ErrWrite "spy stop","";
+            ClkStop SpyClock;
+            ClkReset SpyClock;
+            SpyStop;
+        ENDIF
+    ENDPROC
