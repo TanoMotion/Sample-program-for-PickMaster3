@@ -1,0 +1,17 @@
+  VAR num nPlHeight;
+  VAR bool bFirstPlace:=TRUE;
+
+  PROC Place(num Index)
+    WObjPlace:=ItmSrcData{Index}.Wobj;
+    GetItmTgt ItmSrcData{Index}.ItemSource,PlaceTarget;
+
+    IF bFirstPlace=TRUE THEN
+     nPlHeight:=PlaceTarget.RobTgt.trans.z;
+     bFirstPlace:=FALSE;
+    ENDIF
+
+    MoveL\Conc,RelTool(PlaceTarget.RobTgt,0,0,-(ItmSrcData{Index}.OffsZ-(PlaceTarget.RobTgt.trans.z-nPlHeight))),MaxSpeed,z20,Gripper\WObj:=WObjPlace;
+    TriggL\Conc,PlaceTarget.RobTgt,LowSpeed,ItmSrcData{Index}.VacuumRev1\T2:=ItmSrcData{Index}.VacuumOff1,z5\Inpos:=ItmSrcData{Index}.TrackPoint,Gripper\WObj:=WObjPlace;
+    GripLoad load0;
+    TriggL RelTool(PlaceTarget.RobTgt,0,0,-(ItmSrcData{Index}.OffsZ-(PlaceTarget.RobTgt.trans.z-nPlHeight))),LowSpeed,ItmSrcData{Index}.Ack,z20,Gripper\WObj:=WObjPlace;
+  ENDPROC
