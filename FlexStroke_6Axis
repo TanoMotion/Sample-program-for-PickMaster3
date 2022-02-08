@@ -1,0 +1,19 @@
+    FUNC num FlexStroke(itmtgt EndP,PERS wobjdata cwobj,PERS tooldata ctool,num Height)
+        VAR num n_FlexStroke;
+        VAR num MaxUpper;
+        VAR pose pose_ref:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_new:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_bhalf:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_ahalf:=[[0,0,0],[1,0,0,0]];
+
+        pose_ref.trans:=EndP.RobTgt.trans;
+        pose_ref.rot:=EndP.RobTgt.rot;
+        pose_ahalf:=PoseMult(PoseInv(PoseMult(wobj0.uframe,wobj0.oframe)),PoseMult(cwobj.uframe,cwobj.oframe));
+        pose_bhalf:=PoseMult(pose_ref,PoseMult(PoseInv(ctool.tframe),ctool.tframe));
+        pose_new:=PoseMult(pose_ahalf,pose_bhalf);
+
+        n_FlexStroke:=Height-pose_new.trans.z;
+        ErrWrite "stroke -> "+ValToStr(reg1),"";
+
+        RETURN n_FlexStroke;
+    ENDFUNC
