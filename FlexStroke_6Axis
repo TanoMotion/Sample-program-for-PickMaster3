@@ -12,7 +12,7 @@
         pose_new:=PoseMult(pose_ahalf,pose_bhalf);
         !Height is MaxStroke
         n_FlexStroke:=Height-pose_new.trans.z;
-        ErrWrite "stroke -> "+ValToStr(reg1),"";
+        ErrWrite "stroke -> "+ValToStr(n_FlexStroke),"";
 
         RETURN n_FlexStroke;
     ENDFUNC
