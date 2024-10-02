@@ -16,3 +16,30 @@
 
         RETURN n_FlexStroke;
     ENDFUNC
+
+    FUNC num FlexStroke2(itmtgt EndP,PERS wobjdata cwobj,PERS tooldata ctool,num Height)
+        VAR num n_FlexStroke;
+        VAR num MaxUpper;
+        VAR num Height_CNV;
+        VAR string sCNV;
+        VAR pose pose_ref:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_new:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_bhalf:=[[0,0,0],[1,0,0,0]];
+        VAR pose pose_ahalf:=[[0,0,0],[1,0,0,0]];
+
+        ReadCfgData "/MOC/ROBOT/ROB_1","lower_work_area_z",MaxUpper;
+        IF cwobj.ufmec="" THEN
+            pose_ref.trans:=EndP.RobTgt.trans;
+            pose_ref.rot:=EndP.RobTgt.rot;
+            pose_ahalf:=PoseMult(PoseInv(PoseMult(wobj0.uframe,wobj0.oframe)),PoseMult(cwobj.uframe,cwobj.oframe));
+            pose_bhalf:=PoseMult(pose_ref,PoseMult(PoseInv(ctool.tframe),ctool.tframe));
+            pose_new:=PoseMult(pose_ahalf,pose_bhalf);
+            n_FlexStroke:=pose_new.trans.z+Height+MaxUpper*1000+ctool.tframe.trans.z;
+        ELSE
+            sCNV:=cwobj.ufmec;
+            ReadCfgData "/MOC/SINGLE/"+sCNV,"base_frame_pos_z",Height_CNV;
+            n_FlexStroke:=Height_CNV*1000+EndP.RobTgt.trans.z+ctool.tframe.trans.z+MaxUpper*1000+Height;
+        ENDIF
+        IF n_FlexStroke>0 n_FlexStroke:=-5;
+        RETURN n_FlexStroke;
+    ENDFUNC
